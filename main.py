@@ -192,12 +192,12 @@ def call_api(region, uid):
     try:
         response = requests.get(url, timeout=20)
         if response.status_code != 200:
-            return {"⚠️Invalid": " Maximum likes reached for today. Please try again after 4:00 AM"}
+            return {"⚠️Invalid": " MAXIMUM LIKES REACHED FOR TODAY. PLEASE TRY AGAIN AFTER 4:00 AM"}
         return response.json()
     except requests.exceptions.RequestException:
-        return {"error": "API Failed. Please try again later."}
+        return {"error": "API FAILED. PLEASE TRY AGAIN LATER."}
     except ValueError:
-        return {"error": "Invalid JSON response."}
+        return {"error": "INVALID JSON RESPONSE."}
 
 
 def get_user_limit(user_id):
@@ -214,8 +214,8 @@ threading.Thread(target=reset_limits, daemon=True).start()
 @app.route('/')
 def home():
     return jsonify({
-        'status': 'Bot is running',
-        'bot': 'Free Fire Likes Bot',
+        'status': 'BOT IS RUNNING',
+        'bot': 'FREE FIRE LIKES BOT',
         'health': 'OK'
     })
 
@@ -263,14 +263,47 @@ def handle_like(message):
     elif len(args) == 3:
         region, uid = args[1].upper(), args[2]
     else:
-        bot.reply_to(message, "❌ Format: /like IND UID or /like UID")
+        bot.reply_to(message, "❌ FORMAT: /LIKE IND UID OR /LIKE UID")
         return
 
     if region != "IND" or not uid.isdigit() or not (7 <= len(uid) <= 10):
-        bot.reply_to(message, "⚠️ Invalid input. UID must contain 7 to 10 digits.")
+        bot.reply_to(message, "⚠️ INVALID INPUT. UID MUST CONTAIN 7 TO 10 DIGITS.")
         return
 
     threading.Thread(target=process_like, args=(message, region, uid), daemon=True).start()
+
+
+LIKE_ANIMATION_FRAMES = [
+    "▰▰▱▱▱▱▱▱▱▱",
+    "▱▰▰▱▱▱▱▱▱▱",
+    "▱▱▰▰▱▱▱▱▱▱",
+    "▱▱▱▰▰▱▱▱▱▱",
+    "▱▱▱▱▰▰▱▱▱▱",
+    "▱▱▱▱▱▰▰▱▱▱",
+    "▱▱▱▱▱▱▰▰▱▱",
+    "▱▱▱▱▱▱▱▰▰▱",
+    "▱▱▱▱▱▱▱▱▰▰",
+]
+
+
+def animate_like_sending(chat_id, message_id, stop_event):
+    """Animate the LIKE SENDING message until the API request finishes."""
+    frame_index = 0
+    while not stop_event.is_set():
+        frame = LIKE_ANIMATION_FRAMES[frame_index % len(LIKE_ANIMATION_FRAMES)]
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=f"⚡ LIKES SENDING...\n{frame}",
+            )
+        except Exception:
+            # Telegram can reject an edit if the message is unchanged or rate-limited.
+            pass
+        frame_index += 1
+        # Telegram does not support literal 0-ms message edits; this keeps the
+        # animation visually fast while avoiding an edit flood.
+        stop_event.wait(0.20)
 
 
 def process_like(message, region, uid):
@@ -304,18 +337,30 @@ def process_like(message, region, uid):
         )
         return
 
-    processing_msg = bot.reply_to(message, "⚡ LIKES SENDING... PLEASE WAIT...")
-    response = call_api(region, uid)
+    processing_msg = bot.reply_to(message, "⚡ LIKES SENDING...\n▰▰▱▱▱▱▱▱▱▱")
+    animation_stop = threading.Event()
+    animation_thread = threading.Thread(
+        target=animate_like_sending,
+        args=(processing_msg.chat.id, processing_msg.message_id, animation_stop),
+        daemon=True,
+    )
+    animation_thread.start()
+
+    try:
+        response = call_api(region, uid)
+    finally:
+        animation_stop.set()
+        animation_thread.join(timeout=0.5)
 
     if "error" in response:
         try:
             bot.edit_message_text(
                 chat_id=processing_msg.chat.id,
                 message_id=processing_msg.message_id,
-                text=f"⚠️ API Error: {response['error']}"
+                text=f"⚠️ API ERROR: {response['error']}"
             )
         except Exception:
-            bot.reply_to(message, f"⚠️ API Error: {response['error']}")
+            bot.reply_to(message, f"⚠️ API ERROR: {response['error']}")
         return
 
     if not isinstance(response, dict) or response.get("status") != 1:
@@ -326,7 +371,7 @@ def process_like(message, region, uid):
                 text="❌ UID HAS ALREADY RECEIVED ITS MAX AMOUNT OF LIKES TRY AGAIN AFTER 4:00 AM"
             )
         except Exception:
-            bot.reply_to(message, "⚠️ Invalid UID or unable to fetch data.")
+            bot.reply_to(message, "⚠️ INVALID UID OR UNABLE TO FETCH DATA.")
         return
 
     try:
@@ -361,7 +406,7 @@ def process_like(message, region, uid):
         )
     except Exception as e:
         logger.error(f"Error in process_like: {e}")
-        bot.reply_to(message, "⚠️ Something went wrong. Please try again.")
+        bot.reply_to(message, "⚠️ SOMETHING WENT WRONG. PLEASE TRY AGAIN.")
 
 
 # /remain is intentionally not registered.
@@ -378,17 +423,17 @@ def admin_command(message):
 
     markup = InlineKeyboardMarkup()
     markup.row(
-        InlineKeyboardButton("✏️ Edit Admin Text", callback_data="admin_edit_text", style="success"),
-        InlineKeyboardButton("🔗 Edit Admin Link", callback_data="admin_edit_link", style="success")
+        InlineKeyboardButton("✏️ EDIT ADMIN TEXT", callback_data="admin_edit_text", style="success"),
+        InlineKeyboardButton("🔗 EDIT ADMIN LINK", callback_data="admin_edit_link", style="success")
     )
-    markup.add(InlineKeyboardButton("❌ Close", callback_data="admin_close", style="danger"))
+    markup.add(InlineKeyboardButton("❌ CLOSE", callback_data="admin_close", style="danger"))
 
     bot.reply_to(
         message,
-        "⚙️ <b>Admin Contact Control</b>\n\n"
-        f"Current text: <code>{escape(admin_settings['text'])}</code>\n"
-        f"Current link: <code>{escape(admin_settings['link'])}</code>\n\n"
-        "Choose what you want to edit:",
+        "⚙️ <b>ADMIN CONTACT CONTROL</b>\n\n"
+        f"CURRENT TEXT: <code>{escape(admin_settings['text'])}</code>\n"
+        f"CURRENT LINK: <code>{escape(admin_settings['link'])}</code>\n\n"
+        "CHOOSE WHAT YOU WANT TO EDIT:",
         reply_markup=markup,
         parse_mode="HTML"
     )
@@ -400,7 +445,7 @@ def admin_command(message):
 def admin_callbacks(call):
     # Admin controls can only be used by the owner in the private bot chat.
     if call.from_user.id != OWNER_ID or call.message.chat.type != "private":
-        bot.answer_callback_query(call.id, "Not authorized.", show_alert=True)
+        bot.answer_callback_query(call.id, "NOT AUTHORIZED.", show_alert=True)
         return
 
     if call.data == "admin_close":
@@ -417,9 +462,9 @@ def admin_callbacks(call):
 
     admin_edit_sessions[call.from_user.id] = call.data
     if call.data == "admin_edit_text":
-        prompt = "✏️ Send the new admin text/username now."
+        prompt = "✏️ SEND THE NEW ADMIN TEXT/USERNAME NOW."
     else:
-        prompt = "🔗 Send the new admin link now (https://... or tg://...)."
+        prompt = "🔗 SEND THE NEW ADMIN LINK NOW (HTTPS://... OR TG://...)."
 
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, prompt)
@@ -430,7 +475,7 @@ def admin_no_link_callback(call):
     # No owner profile fallback. A URL button appears after /admin configures a link.
     bot.answer_callback_query(
         call.id,
-        "Admin link has not been configured yet.",
+        "ADMIN LINK HAS NOT BEEN CONFIGURED YET.",
         show_alert=True
     )
 
@@ -441,11 +486,11 @@ def help_command(message):
         return
 
     help_text = (
-        "📖 <b>Bot Commands:</b>\n\n"
-        "🧑‍💻 <code>/like IND &lt;uid&gt;</code> - Send likes to an India UID\n"
-        "⚡ <code>/like &lt;uid&gt;</code> - Send likes using IND automatically\n"
-        "⚡ <code>IND &lt;uid&gt;</code> or just <code>&lt;uid&gt;</code> - IND shortcut\n"
-        "🔰 <code>/start</code> - Start the bot"
+        "📖 <b>BOT COMMANDS:</b>\n\n"
+        "🧑‍💻 <code>/like IND &lt;uid&gt;</code> - SEND LIKES TO AN INDIA UID\n"
+        "⚡ <code>/like &lt;uid&gt;</code> - SEND LIKES USING IND AUTOMATICALLY\n"
+        "⚡ <code>IND &lt;uid&gt;</code> or just <code>&lt;uid&gt;</code> - IND SHORTCUT\n"
+        "🔰 <code>/start</code> - START THE BOT"
     )
     bot.reply_to(message, help_text, reply_markup=admin_contact_markup(), parse_mode="HTML")
 
@@ -490,12 +535,12 @@ def reply_all(message):
 
             if action == "admin_edit_text":
                 if not value or len(value) > 64:
-                    bot.reply_to(message, "❌ Admin text must be between 1 and 64 characters.")
+                    bot.reply_to(message, "❌ ADMIN TEXT MUST BE BETWEEN 1 AND 64 CHARACTERS.")
                     return
                 admin_settings["text"] = value
             elif action == "admin_edit_link":
                 if not (value.startswith("https://") or value.startswith("http://") or value.startswith("tg://")):
-                    bot.reply_to(message, "❌ Invalid link. Use https://, http://, or tg://.")
+                    bot.reply_to(message, "❌ INVALID LINK. USE HTTPS://, HTTP://, OR TG://.")
                     return
                 admin_settings["link"] = value
 
@@ -503,7 +548,7 @@ def reply_all(message):
             admin_edit_sessions.pop(message.from_user.id, None)
             bot.reply_to(
                 message,
-                "✅ Admin contact updated successfully.",
+                "✅ ADMIN CONTACT UPDATED SUCCESSFULLY.",
                 reply_markup=admin_contact_markup()
             )
             return
