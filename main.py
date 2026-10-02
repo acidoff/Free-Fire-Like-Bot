@@ -252,10 +252,8 @@ def start_command(message):
     )
 
     welcome_message = (
-        f"🎉 WELCOME {mention}\\n"
-        f"🤖 BOT IS READY. USE /LIKE TO SEND LIKES.\\n"
-        # f"THIS_TYPE\\n"
-        # f"ADD YOUR EXTRA MESSAGE HERE\\n"
+        f"🎉 WELCOME {mention}\n"
+        f"🤖 BOT IS READY SEND YOUR UID AND GET FREE LIKES"
     )
 
     bot.reply_to(
