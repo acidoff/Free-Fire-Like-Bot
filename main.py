@@ -253,7 +253,7 @@ def start_command(message):
 
     welcome_message = (
         f"🎉 WELCOME {mention}\n"
-        f"🤖 BOT IS READY SEND YOUR UID AND GET FREE LIKES"
+        f"👍 SEND YOUR UID AND GET FREE LIKES"
     )
 
     bot.reply_to(
