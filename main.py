@@ -241,10 +241,28 @@ def webhook():
 def start_command(message):
     if not require_official_group(message):
         return
+
+    # ═══════════════════════════════════════════════════════════════
+    # WELCOME MESSAGE — CUSTOMIZE EACH LINE BELOW
+    # {mention} IS THE USER'S CLICKABLE TELEGRAM MENTION.
+    # ═══════════════════════════════════════════════════════════════
+    mention = (
+        f'<a href="tg://user?id={message.from_user.id}">'
+        f'{escape(message.from_user.first_name or "USER")}</a>'
+    )
+
+    welcome_message = (
+        f"🎉 WELCOME {mention}\\n"
+        f"🤖 BOT IS READY. USE /LIKE TO SEND LIKES.\\n"
+        # f"THIS_TYPE\\n"
+        # f"ADD YOUR EXTRA MESSAGE HERE\\n"
+    )
+
     bot.reply_to(
         message,
-        "✅ Bot is ready. Use /like to send likes.",
-        reply_markup=admin_contact_markup()
+        welcome_message,
+        reply_markup=admin_contact_markup(),
+        parse_mode="HTML"
     )
 
 
@@ -271,39 +289,6 @@ def handle_like(message):
         return
 
     threading.Thread(target=process_like, args=(message, region, uid), daemon=True).start()
-
-
-LIKE_ANIMATION_FRAMES = [
-    "▰▰▱▱▱▱▱▱▱▱",
-    "▱▰▰▱▱▱▱▱▱▱",
-    "▱▱▰▰▱▱▱▱▱▱",
-    "▱▱▱▰▰▱▱▱▱▱",
-    "▱▱▱▱▰▰▱▱▱▱",
-    "▱▱▱▱▱▰▰▱▱▱",
-    "▱▱▱▱▱▱▰▰▱▱",
-    "▱▱▱▱▱▱▱▰▰▱",
-    "▱▱▱▱▱▱▱▱▰▰",
-]
-
-
-def animate_like_sending(chat_id, message_id, stop_event):
-    """Animate the LIKE SENDING message until the API request finishes."""
-    frame_index = 0
-    while not stop_event.is_set():
-        frame = LIKE_ANIMATION_FRAMES[frame_index % len(LIKE_ANIMATION_FRAMES)]
-        try:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=f"⚡ LIKES SENDING...\n{frame}",
-            )
-        except Exception:
-            # Telegram can reject an edit if the message is unchanged or rate-limited.
-            pass
-        frame_index += 1
-        # Telegram does not support literal 0-ms message edits; this keeps the
-        # animation visually fast while avoiding an edit flood.
-        stop_event.wait(0.20)
 
 
 def process_like(message, region, uid):
@@ -337,20 +322,8 @@ def process_like(message, region, uid):
         )
         return
 
-    processing_msg = bot.reply_to(message, "⚡ LIKES SENDING...\n▰▰▱▱▱▱▱▱▱▱")
-    animation_stop = threading.Event()
-    animation_thread = threading.Thread(
-        target=animate_like_sending,
-        args=(processing_msg.chat.id, processing_msg.message_id, animation_stop),
-        daemon=True,
-    )
-    animation_thread.start()
-
-    try:
-        response = call_api(region, uid)
-    finally:
-        animation_stop.set()
-        animation_thread.join(timeout=0.5)
+    processing_msg = bot.reply_to(message, "⚡ LIKES SENDING...")
+    response = call_api(region, uid)
 
     if "error" in response:
         try:
