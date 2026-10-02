@@ -33,8 +33,8 @@ if not BOT_TOKEN:
 
 # === ACCESS / ADMIN CONFIG ===
 # Channel membership is intentionally NOT required.
-GROUP_JOIN_LINK = "https://t.me/ms_like_group"
-OFFICIAL_GROUP_USERNAME = "ms_like_group"
+GROUP_JOIN_LINK = "https://t.me/MS_FREE_LIKE_GROUP"
+OFFICIAL_GROUP_USERNAME = "MS_FREE_LIKE_GROUP"
 # Set OFFICIAL_GROUP_ID in the environment for the strongest group check.
 # If it is 0, the official public username above is used.
 try:
@@ -253,7 +253,7 @@ def start_command(message):
 
     welcome_message = (
         f"🎉 WELCOME {mention}\n"
-        f"👍 SEND YOUR UID AND GET FREE LIKES"
+        f"👍 SEND YOUR UID & GET LIKES"
     )
 
     bot.reply_to(
