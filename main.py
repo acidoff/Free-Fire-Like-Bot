@@ -455,7 +455,7 @@ def help_command(message):
         (message.chat.type in ("group", "supergroup") or
          (message.chat.type == "private" and message.from_user and message.from_user.id == OWNER_ID))
         and isinstance(message.text, str)
-        and re.fullmatch(r"(?i)(?:IND\\s+)?\\d{7,10}", message.text.strip()) is not None
+        and re.fullmatch(r"(?i)(?:IND\s+)?\d{7,10}", message.text.strip()) is not None
     ),
     content_types=['text']
 )
