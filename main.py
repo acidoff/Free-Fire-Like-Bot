@@ -8,6 +8,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request, jsonify
 import logging
 import sys
+import re
 import json
 from html import escape
 # ╔══════════════════════════════════════════════════════════════════╗
@@ -149,15 +150,29 @@ def save_admin_settings():
 
 
 def admin_contact_markup():
-    """Show a clickable admin button only when an explicit URL was configured."""
+    """Always show the admin contact button.
+
+    The button opens ONLY the explicit URL configured from /admin.
+    If no URL has been configured yet, it uses a callback instead of
+    falling back to the owner's Telegram profile.
+    """
     markup = InlineKeyboardMarkup()
     link = admin_settings.get("link", "").strip()
-    text = admin_settings.get("text", "").strip()
-    if link and text:
+    text = admin_settings.get("text", "").strip() or "@MS_P4NL_ADMIN"
+
+    if link:
         markup.add(
             InlineKeyboardButton(
                 text,
                 url=link,
+                style="success"
+            )
+        )
+    else:
+        markup.add(
+            InlineKeyboardButton(
+                text,
+                callback_data="admin_no_link",
                 style="success"
             )
         )
@@ -240,13 +255,20 @@ def handle_like(message):
         return
 
     args = message.text.split()
-    if len(args) != 3:
-        bot.reply_to(message, "❌ Format: /like server_name uid")
+
+    # Supported forms:
+    #   /like IND UID
+    #   /like UID            -> automatically uses IND
+    if len(args) == 2 and args[1].isdigit():
+        region, uid = "IND", args[1]
+    elif len(args) == 3:
+        region, uid = args[1].upper(), args[2]
+    else:
+        bot.reply_to(message, "❌ Format: /like IND UID or /like UID")
         return
 
-    region, uid = args[1], args[2]
-    if not region.isalpha() or not uid.isdigit():
-        bot.reply_to(message, "⚠️ Invalid input. Use: /like server_name uid")
+    if region != "IND" or not uid.isdigit():
+        bot.reply_to(message, "⚠️ Invalid input. Use: /like IND UID or /like UID")
         return
 
     threading.Thread(target=process_like, args=(message, region, uid), daemon=True).start()
@@ -404,6 +426,16 @@ def admin_callbacks(call):
     bot.send_message(call.message.chat.id, prompt)
 
 
+@bot.callback_query_handler(func=lambda call: call.data == "admin_no_link")
+def admin_no_link_callback(call):
+    # No owner profile fallback. A URL button appears after /admin configures a link.
+    bot.answer_callback_query(
+        call.id,
+        "Admin link has not been configured yet.",
+        show_alert=True
+    )
+
+
 @bot.message_handler(commands=['help'])
 def help_command(message):
     if not require_official_group(message):
@@ -411,10 +443,40 @@ def help_command(message):
 
     help_text = (
         "📖 <b>Bot Commands:</b>\n\n"
-        "🧑‍💻 <code>/like &lt;region&gt; &lt;uid&gt;</code> - Send likes to Free Fire UID\n"
+        "🧑‍💻 <code>/like IND &lt;uid&gt;</code> - Send likes to an India UID\n"
+        "⚡ <code>/like &lt;uid&gt;</code> - Send likes using IND automatically\n"
+        "⚡ <code>IND &lt;uid&gt;</code> or just <code>&lt;uid&gt;</code> - IND shortcut\n"
         "🔰 <code>/start</code> - Start the bot"
     )
     bot.reply_to(message, help_text, reply_markup=admin_contact_markup(), parse_mode="HTML")
+
+
+@bot.message_handler(
+    func=lambda message: (
+        message.chat.type in ("group", "supergroup")
+        and re.fullmatch(r"(?i)(?:IND\\s+)?\\d+", message.text.strip()) is not None
+    ),
+    content_types=['text']
+)
+def handle_uid_shortcut(message):
+    """Allow 'UID' or 'IND UID' in the official group as an IND /like shortcut."""
+    if not require_official_group(message):
+        return
+
+    parts = message.text.strip().split()
+    if len(parts) == 1:
+        region, uid = "IND", parts[0]
+    else:
+        region, uid = parts[0].upper(), parts[1]
+
+    if region != "IND" or not uid.isdigit():
+        return
+
+    threading.Thread(
+        target=process_like,
+        args=(message, region, uid),
+        daemon=True
+    ).start()
 
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
