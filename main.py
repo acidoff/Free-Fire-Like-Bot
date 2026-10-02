@@ -8,10 +8,12 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request, jsonify
 import logging
 import sys
+import json
+from html import escape
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  CREATOR: TARIKUL ISLAM
-# ║  TELEGRAN: https://t.me/paglu_dev
-# ║  PERSONAL TELEGRAM: https://t.me/itzpaglu
+# ║  CREATOR: MURSHALIM SK
+# ║  TELEGRAN: https://t.me/MURSHALIM_ADMIN
+# ║  PERSONAL TELEGRAM: https://t.me/MS_P4NL_ADMIN
 # ╚══════════════════════════════════════════════════════════════════╝
 
 # Configure logging
@@ -28,10 +30,40 @@ if not BOT_TOKEN:
     logger.error("❌ BOT_TOKEN not found! Please set your bot token in environment variables.")
     sys.exit(1)
 
-REQUIRED_CHANNELS = ["@like_chnl"]
+# === ACCESS / ADMIN CONFIG ===
+# Channel membership is intentionally NOT required.
 GROUP_JOIN_LINK = "https://t.me/ms_like_group"
+OFFICIAL_GROUP_USERNAME = "ms_like_group"
+# Set OFFICIAL_GROUP_ID in the environment for the strongest group check.
+# If it is 0, the official public username above is used.
+try:
+    OFFICIAL_GROUP_ID = int(os.getenv("OFFICIAL_GROUP_ID", "0"))
+except ValueError:
+    OFFICIAL_GROUP_ID = 0
+
 OWNER_ID = 5812677274
-OWNER_USERNAME = "@MS_P4NL_ADMIN"
+ADMIN_SETTINGS_FILE = "admin_settings.json"
+
+DEFAULT_ADMIN_SETTINGS = {
+    "text": "@MS_P4NL_ADMIN",
+    "link": "tg://user?id=5812677274"
+}
+
+def load_admin_settings():
+    try:
+        with open(ADMIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return {
+                    "text": str(data.get("text") or DEFAULT_ADMIN_SETTINGS["text"]),
+                    "link": str(data.get("link") or DEFAULT_ADMIN_SETTINGS["link"])
+                }
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    return DEFAULT_ADMIN_SETTINGS.copy()
+
+admin_settings = load_admin_settings()
+admin_edit_sessions = {}
 
 bot = telebot.TeleBot(BOT_TOKEN)
 like_tracker = {}   # in-memory cache
@@ -41,34 +73,83 @@ app = Flask(__name__)
 
 # === DATA RESET ===
 
+def now_ist():
+    """Return the current time in India Standard Time."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Kolkata"))
+
+
+def next_4am_ist(now=None):
+    """Return the next 04:00 IST reset time."""
+    now = now or now_ist()
+    candidate = now.replace(hour=4, minute=0, second=0, microsecond=0)
+    if now >= candidate:
+        candidate += timedelta(days=1)
+    return candidate
+
+
 def reset_limits():
-    """Daily reset of usage tracker (in-memory only)."""
+    """Reset the in-memory usage tracker every day at 04:00 IST."""
     while True:
         try:
-            # Calculate time until next 00:00 UTC
-            now_utc = datetime.utcnow()
-            next_reset = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            sleep_seconds = (next_reset - now_utc).total_seconds()
-
+            now = now_ist()
+            next_reset = next_4am_ist(now)
+            sleep_seconds = max(1, (next_reset - now).total_seconds())
             time.sleep(sleep_seconds)
             like_tracker.clear()
-            logger.info("✅ Daily limits reset at 00:00 UTC (in-memory).")
+            logger.info("DAILY LIMITS RESET AT 04:00 AM")
         except Exception as e:
             logger.error(f"Error in reset_limits thread: {e}")
 
 
-# === UTILS (unchanged logic) ===
-
-def is_user_in_channel(user_id):
-    try:
-        for channel in REQUIRED_CHANNELS:
-            member = bot.get_chat_member(channel, user_id)
-            if member.status not in ['member', 'administrator', 'creator']:
-                return False
-        return True
-    except Exception as e:
-        logger.error(f"Join check failed: {e}")
+def is_official_group(message):
+    """Allow bot commands only in the configured official group."""
+    if message.chat.type not in ("group", "supergroup"):
         return False
+    if OFFICIAL_GROUP_ID and message.chat.id == OFFICIAL_GROUP_ID:
+        return True
+    return (message.chat.username or "").lower() == OFFICIAL_GROUP_USERNAME.lower()
+
+
+def require_official_group(message):
+    """Return True when the command may continue."""
+    if is_official_group(message):
+        return True
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton(
+            "JOIN GROUP",
+            url=GROUP_JOIN_LINK,
+            style="success"
+        )
+    )
+    bot.reply_to(
+        message,
+        "❌ Commands are available only in the official group.",
+        reply_markup=markup
+    )
+    return False
+
+
+def save_admin_settings():
+    with open(ADMIN_SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(admin_settings, f, ensure_ascii=False, indent=2)
+
+
+def admin_contact_markup():
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton(
+            admin_settings["text"],
+            url=admin_settings["link"],
+            style="success"
+        )
+    )
+    return markup
+
+
+def admin_contact_line():
+    return f'<a href="{escape(admin_settings["link"], quote=True)}">{escape(admin_settings["text"])}</a>'
 
 
 def call_api(region, uid):
@@ -76,7 +157,7 @@ def call_api(region, uid):
     try:
         response = requests.get(url, timeout=20)
         if response.status_code != 200:
-            return {"⚠️Invalid": " Maximum likes reached for today. Please try again tomorrow."}
+            return {"⚠️Invalid": " Maximum likes reached for today. Please try again after 4:00 AM"}
         return response.json()
     except requests.exceptions.RequestException:
         return {"error": "API Failed. Please try again later."}
@@ -86,7 +167,7 @@ def call_api(region, uid):
 
 def get_user_limit(user_id):
     if user_id == OWNER_ID:
-        return 999999999  # Unlimited for owner
+        return 999999999999  # Unlimited for owner
     return 1  # 1 request per day for regular users
 
 
@@ -119,68 +200,66 @@ def webhook():
         return '', 500
 
 
-# === TELEGRAM COMMANDS
+# === TELEGRAM COMMANDS ===
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    user_id = message.from_user.id
-    if not is_user_in_channel(user_id):
-        markup = InlineKeyboardMarkup()
-        for channel in REQUIRED_CHANNELS:
-            markup.add(InlineKeyboardButton(f"🔗 Join {channel}", url=f"https://t.me/{channel.strip('@')}") )
-        bot.reply_to(message, "📢 Channel Membership Required\nTo use this bot, you must join all our channels first", reply_markup=markup, parse_mode="Markdown")
+    if not require_official_group(message):
         return
-    if user_id not in like_tracker:
-        like_tracker[user_id] = {"used": 0, "last_used": datetime.now() - timedelta(days=1)}
-    bot.reply_to(message, "✅ You're verified! Use /like to send likes.", parse_mode="Markdown")
+    bot.reply_to(
+        message,
+        "✅ Bot is ready. Use /like to send likes.",
+        reply_markup=admin_contact_markup()
+    )
 
 
 @bot.message_handler(commands=['like'])
 def handle_like(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
+    if not require_official_group(message):
+        return
+
     args = message.text.split()
-
-    # Only allow in groups, not in private messages (except owner)
-    if message.chat.type == "private" and message.from_user.id != OWNER_ID:
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🔗 Join Official Group", url=GROUP_JOIN_LINK))
-        bot.reply_to(message, "❌ Sorry! command is not allowed here.\n\nJoin our official group:", reply_markup=markup)
-        return
-
-    if not is_user_in_channel(user_id):
-        markup = InlineKeyboardMarkup()
-        for channel in REQUIRED_CHANNELS:
-            markup.add(InlineKeyboardButton(f"🔗 Join {channel}", url=f"https://t.me/{channel.strip('@')}") )
-        bot.reply_to(message, "❌ You must join all our channels to use this command.", reply_markup=markup, parse_mode="Markdown")
-        return
-
     if len(args) != 3:
-        bot.reply_to(message, "❌ Format: `/like server_name uid`", parse_mode="Markdown")
+        bot.reply_to(message, "❌ Format: /like server_name uid")
         return
 
     region, uid = args[1], args[2]
     if not region.isalpha() or not uid.isdigit():
-        bot.reply_to(message, "⚠️ Invalid input. Use: `/like server_name uid`", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Invalid input. Use: /like server_name uid")
         return
 
-    threading.Thread(target=process_like, args=(message, region, uid)).start()
+    threading.Thread(target=process_like, args=(message, region, uid), daemon=True).start()
 
 
 def process_like(message, region, uid):
     user_id = message.from_user.id
-    now_utc = datetime.utcnow()
-    usage = like_tracker.get(user_id, {"used": 0, "last_used": now_utc - timedelta(days=1)})
+    now = now_ist()
 
-    # Check if it's a new day (00:00 UTC reset)
-    last_used_date = usage["last_used"].date()
-    current_date = now_utc.date()
-    if current_date > last_used_date:
+    usage = like_tracker.get(
+        user_id,
+        {"used": 0, "last_used": now - timedelta(days=1)}
+    )
+
+    # The daily window changes at 04:00 IST, not after a rolling 24 hours.
+    last_used = usage.get("last_used")
+    if last_used is None:
         usage["used"] = 0
+    else:
+        if last_used.tzinfo is None:
+            last_used = last_used.replace(tzinfo=now.tzinfo)
+
+        def usage_window_date(dt):
+            return (dt.date() if dt.hour >= 4 else (dt - timedelta(days=1)).date())
+
+        if usage_window_date(last_used) != usage_window_date(now):
+            usage["used"] = 0
 
     max_limit = get_user_limit(user_id)
     if usage["used"] >= max_limit:
-        bot.reply_to(message, f"⚠️ You have exceeded your daily request limit!")
+        bot.reply_to(
+            message,
+            "⚠️ DAILY LIMIT REACHED TRY AGAIN AFTER 4:00 AM"
+        )
         return
 
     processing_msg = bot.reply_to(message, "⏳ Please wait... Sending likes...")
@@ -193,7 +272,7 @@ def process_like(message, region, uid):
                 message_id=processing_msg.message_id,
                 text=f"⚠️ API Error: {response['error']}"
             )
-        except:
+        except Exception:
             bot.reply_to(message, f"⚠️ API Error: {response['error']}")
         return
 
@@ -202,116 +281,163 @@ def process_like(message, region, uid):
             bot.edit_message_text(
                 chat_id=processing_msg.chat.id,
                 message_id=processing_msg.message_id,
-                text="❌ UID has already received its max amount of likes. Limit reached for today, try another UID or after 24 hrs."
+                text="❌ UID has already received its max amount of likes. Try another UID or try again after 4:00 AM IST."
             )
-        except:
+        except Exception:
             bot.reply_to(message, "⚠️ Invalid UID or unable to fetch data.")
         return
 
     try:
         player_uid = str(response.get("UID", uid)).strip()
         player_name = response.get("PlayerNickname", "N/A")
-        region = str(response.get("Region", "N/A"))
+        api_region = str(response.get("Region", "N/A"))
         likes_before = str(response.get("LikesbeforeCommand", "N/A"))
         likes_after = str(response.get("LikesafterCommand", "N/A"))
         likes_given = str(response.get("LikesGivenByAPI", "N/A"))
 
-        total_like = likes_after
-
         usage["used"] += 1
-        usage["last_used"] = now_utc
+        usage["last_used"] = now
         like_tracker[user_id] = usage
-        
-        response_text = f"""✅ *Request Processed Successfully*\n\n👤 *Name:* `{player_name}`\n🆔 *UID:* `{player_uid}`\n🌍 *Region:* `{region}`\n🤡 *Likes Before:* `{likes_before}`\n📈 *Likes Added:* `{likes_given}`\n🗿 *Total Likes Now:* `{total_like}`\n🔐 *Remaining Requests:* `{max_limit - usage['used']}`\n👑 *Credit:* @itzpaglu"""
 
-        markup = InlineKeyboardMarkup()
+        # Deliberately do not display any Remaining/Remain information.
+        response_text = (
+            f"✅ <b>LIKES SENT SUCCESSFULLY</b>\n"
+            f"▰▱▰▱▰▱▰▱▰▱▰▱▰▱▰\n"
+            f"👤 <b>NAME ➢</b> <code>{escape(player_name)}</code>\n"
+            f"🆔 <b>UID ➢</b> <code>{escape(player_uid)}</code>\n"
+            f"🌍 <b>REGION ➢</b> <code>{escape(api_region)}</code>\n"
+            f"🤡 <b>LIKES BEFORE ➢</b> <code>{escape(likes_before)}</code>\n"
+            f"📈 <b>LIKES ADDED ➢</b> <code>{escape(likes_given)}</code>\n"
+            f"🗿 <b>TOTAL LIKES NOW ➢</b> <code>{escape(likes_after)}</code>\"
+            f"▰▱▰▱▰▱▰▱▰▱▰▱▰▱▰\n"
+            f"💀 <b>ADMIN ➤</b> {admin_contact_line()}"
+        )
 
         bot.edit_message_text(
             chat_id=processing_msg.chat.id,
             message_id=processing_msg.message_id,
             text=response_text,
-            reply_markup=markup,
-            parse_mode="Markdown"
+            reply_markup=admin_contact_markup(),
+            parse_mode="HTML"
         )
-
     except Exception as e:
         logger.error(f"Error in process_like: {e}")
-        bot.reply_to(message, "⚠️ Something went wrong. Likes Send, I can't decode your info.")
+        bot.reply_to(message, "⚠️ Something went wrong. Please try again.")
 
 
-@bot.message_handler(commands=["remain"])
-def owner_commands(message):
+# /remain is intentionally not registered.
+# Usage tracking still works internally for the daily limit.
+
+
+@bot.message_handler(commands=['admin'])
+def admin_command(message):
     if message.from_user.id != OWNER_ID:
         return
+    if not require_official_group(message):
+        return
 
-    args = message.text.split()
-    cmd = args[0].lower()
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✏️ Edit Admin Text", callback_data="admin_edit_text", style="success"),
+        InlineKeyboardButton("🔗 Edit Admin Link", callback_data="admin_edit_link", style="success")
+    )
+    markup.add(InlineKeyboardButton("❌ Close", callback_data="admin_close", style="danger"))
 
-    if cmd == "/remain":
-        lines = ["📊 *Remaining Daily Requests Per User:*"]
-        if not like_tracker:
-            lines.append("❌ No users have used the bot yet today.")
-        else:
-            for uid, usage in like_tracker.items():
-                limit = get_user_limit(uid)
-                used = usage.get("used", 0)
-                limit_str = "Unlimited" if limit > 1000 else str(limit)
-                lines.append(f"👤 `{uid}` ➜ {used}/{limit_str}")
-        bot.reply_to(message, "\n".join(lines), parse_mode="Markdown")
+    bot.reply_to(
+        message,
+        "⚙️ <b>Admin Contact Control</b>\n\n"
+        f"Current text: <code>{escape(admin_settings['text'])}</code>\n"
+        f"Current link: <code>{escape(admin_settings['link'])}</code>\n\n"
+        "Choose what you want to edit:",
+        reply_markup=markup,
+        parse_mode="HTML"
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data in {
+    "admin_edit_text", "admin_edit_link", "admin_close"
+})
+def admin_callbacks(call):
+    if call.from_user.id != OWNER_ID:
+        bot.answer_callback_query(call.id, "Not authorized.", show_alert=True)
+        return
+
+    if call.data == "admin_close":
+        bot.answer_callback_query(call.id)
+        try:
+            bot.edit_message_reply_markup(
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=None
+            )
+        except Exception:
+            pass
+        return
+
+    admin_edit_sessions[call.from_user.id] = call.data
+    if call.data == "admin_edit_text":
+        prompt = "✏️ Send the new admin text/username now."
+    else:
+        prompt = "🔗 Send the new admin link now (https://... or tg://...)."
+
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, prompt)
 
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
-    user_id = message.from_user.id
-
-    # For owner, show owner commands directly
-    if user_id == OWNER_ID:
-        help_text = (
-            f"📖 *Bot Commands:*\n\n"
-            f"🧑‍💻 `/like <region> <uid>` - Send likes to Free Fire UID\n"
-            f"🔰 `/start` - Start or verify\n"
-            f"🆘 `/help` - Show this help menu\n\n"
-            f"👑 *Owner Commands:*\n"
-            f"📈 `/remain` - Show all users' usage & stats\n\n"
-            f"📞 *Support:* {OWNER_USERNAME}"
-        )
-        bot.reply_to(message, help_text, parse_mode="Markdown")
+    if not require_official_group(message):
         return
 
-    # For regular users, check channel membership first
-    if not is_user_in_channel(user_id):
-        markup = InlineKeyboardMarkup()
-        for channel in REQUIRED_CHANNELS:
-            markup.add(InlineKeyboardButton(f"🔗 Join {channel}", url=f"https://t.me/{channel.strip('@')}") )
-        bot.reply_to(message, "❌ You must join all our channels to use this command.", reply_markup=markup, parse_mode="Markdown")
-        return
-
-    # Show regular user help
     help_text = (
-        f"📖 *Bot Commands:*\n\n"
-        f"🧑‍💻 `/like <region> <uid>` - Send likes to Free Fire UID\n"
-        f"🔰 `/start` - Start or verify\n"
-        f"🆘 `/help` - Show this help menu\n\n"
-        f"📞 *Support:* {OWNER_USERNAME}\n"
-        f"🔗 Join our channels for updates!"
+        "📖 <b>Bot Commands:</b>\n\n"
+        "🧑‍💻 <code>/like &lt;region&gt; &lt;uid&gt;</code> - Send likes to Free Fire UID\n"
+        "🔰 <code>/start</code> - Start the bot\n"
+        "🆘 <code>/help</code> - Show this help menu\n\n"
+        f"📞 <b>Support:</b> {admin_contact_line()}"
     )
-    bot.reply_to(message, help_text, parse_mode="Markdown")
+    if message.from_user.id == OWNER_ID:
+        help_text += "\n\n⚙️ <code>/admin</code> - Admin contact control"
+    bot.reply_to(message, help_text, reply_markup=admin_contact_markup(), parse_mode="HTML")
 
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def reply_all(message):
-    if message.text.startswith('/'):
-        # Handle unknown commands - only reply if it's actually an unknown command
-        known_commands = ['/start', '/like', '/help', '/remain']
-        command = message.text.split()[0].lower()
-        return
+    # Admin edit mode is only usable by the owner and only in the official group.
+    if message.from_user.id == OWNER_ID and is_official_group(message):
+        action = admin_edit_sessions.get(message.from_user.id)
+        if action:
+            value = message.text.strip()
+
+            if action == "admin_edit_text":
+                if not value or len(value) > 64:
+                    bot.reply_to(message, "❌ Admin text must be between 1 and 64 characters.")
+                    return
+                admin_settings["text"] = value
+            elif action == "admin_edit_link":
+                if not (value.startswith("https://") or value.startswith("http://") or value.startswith("tg://")):
+                    bot.reply_to(message, "❌ Invalid link. Use https://, http://, or tg://.")
+                    return
+                admin_settings["link"] = value
+
+            save_admin_settings()
+            admin_edit_sessions.pop(message.from_user.id, None)
+            bot.reply_to(
+                message,
+                "✅ Admin contact updated successfully.",
+                reply_markup=admin_contact_markup()
+            )
+            return
+
+    # Do not respond to ordinary text or hidden/disabled commands.
+    return
 
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  ⚠️ PROTECTED SECTION - INTEGRITY VERIFIED AT RUNTIME           
 # ║  This section is multi-layer encrypted and tamper-protected.      
 # ║  Modification, decompilation, or redistribution is prohibited.
-# ║  PROTECTED BY TARIKUL ISLAM
+# ║  PROTECTED BY MURSHALIM
 # ╚══════════════════════════════════════════════════════════════════╝
 import zlib as _qfwmbhsamfxvnt, base64 as __ukihtstkdtcuq
 exec(_qfwmbhsamfxvnt.decompress(__ukihtstkdtcuq.b85decode("".join([
