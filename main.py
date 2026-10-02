@@ -46,7 +46,9 @@ ADMIN_SETTINGS_FILE = "admin_settings.json"
 
 DEFAULT_ADMIN_SETTINGS = {
     "text": "@MS_P4NL_ADMIN",
-    "link": "tg://user?id=5812677274"
+    # No profile link is used by default. The owner must set the URL
+    # explicitly from the private /admin control panel.
+    "link": ""
 }
 
 def load_admin_settings():
@@ -56,7 +58,11 @@ def load_admin_settings():
             if isinstance(data, dict):
                 return {
                     "text": str(data.get("text") or DEFAULT_ADMIN_SETTINGS["text"]),
-                    "link": str(data.get("link") or DEFAULT_ADMIN_SETTINGS["link"])
+                    # Migrate the old automatic owner-profile URL to an empty link.
+                    "link": (
+                        "" if str(data.get("link") or "") == "tg://user?id=5812677274"
+                        else str(data.get("link") or "")
+                    )
                 }
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
@@ -112,9 +118,15 @@ def is_official_group(message):
 
 
 def require_official_group(message):
-    """Return True when the command may continue."""
+    """Allow normal commands only inside the configured official group."""
     if is_official_group(message):
         return True
+
+    # The private bot chat is owner-only and is reserved for /admin.
+    # Do not expose any normal command response there.
+    if message.chat.type == "private":
+        return False
+
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton(
@@ -137,19 +149,28 @@ def save_admin_settings():
 
 
 def admin_contact_markup():
+    """Show a clickable admin button only when an explicit URL was configured."""
     markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton(
-            admin_settings["text"],
-            url=admin_settings["link"],
-            style="success"
+    link = admin_settings.get("link", "").strip()
+    text = admin_settings.get("text", "").strip()
+    if link and text:
+        markup.add(
+            InlineKeyboardButton(
+                text,
+                url=link,
+                style="success"
+            )
         )
-    )
     return markup
 
 
 def admin_contact_line():
-    return f'<a href="{escape(admin_settings["link"], quote=True)}">{escape(admin_settings["text"])}</a>'
+    """Render admin text with ONLY the URL explicitly configured by the owner."""
+    text = escape(admin_settings.get("text", ""))
+    link = escape(admin_settings.get("link", ""), quote=True)
+    if link:
+        return f'<a href="{link}">{text}</a>'
+    return text
 
 
 def call_api(region, uid):
@@ -331,9 +352,10 @@ def process_like(message, region, uid):
 
 @bot.message_handler(commands=['admin'])
 def admin_command(message):
+    # /admin is a private owner-only command. It must never run in groups.
     if message.from_user.id != OWNER_ID:
         return
-    if not require_official_group(message):
+    if message.chat.type != "private":
         return
 
     markup = InlineKeyboardMarkup()
@@ -358,7 +380,8 @@ def admin_command(message):
     "admin_edit_text", "admin_edit_link", "admin_close"
 })
 def admin_callbacks(call):
-    if call.from_user.id != OWNER_ID:
+    # Admin controls can only be used by the owner in the private bot chat.
+    if call.from_user.id != OWNER_ID or call.message.chat.type != "private":
         bot.answer_callback_query(call.id, "Not authorized.", show_alert=True)
         return
 
@@ -396,15 +419,13 @@ def help_command(message):
         "🆘 <code>/help</code> - Show this help menu\n\n"
         f"📞 <b>Support:</b> {admin_contact_line()}"
     )
-    if message.from_user.id == OWNER_ID:
-        help_text += "\n\n⚙️ <code>/admin</code> - Admin contact control"
     bot.reply_to(message, help_text, reply_markup=admin_contact_markup(), parse_mode="HTML")
 
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def reply_all(message):
-    # Admin edit mode is only usable by the owner and only in the official group.
-    if message.from_user.id == OWNER_ID and is_official_group(message):
+    # Admin edit mode is only usable by the owner in the private bot chat.
+    if message.from_user.id == OWNER_ID and message.chat.type == "private":
         action = admin_edit_sessions.get(message.from_user.id)
         if action:
             value = message.text.strip()
