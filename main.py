@@ -119,12 +119,11 @@ def is_official_group(message):
 
 
 def require_official_group(message):
-    """Allow normal commands only inside the configured official group."""
+    """Allow commands in the official group, or allow the owner everywhere."""
+    if message.from_user and message.from_user.id == OWNER_ID:
+        return True
     if is_official_group(message):
         return True
-
-    # The private bot chat is owner-only and is reserved for /admin.
-    # Do not expose any normal command response there.
     if message.chat.type == "private":
         return False
 
@@ -267,8 +266,8 @@ def handle_like(message):
         bot.reply_to(message, "❌ Format: /like IND UID or /like UID")
         return
 
-    if region != "IND" or not uid.isdigit():
-        bot.reply_to(message, "⚠️ Invalid input. Use: /like IND UID or /like UID")
+    if region != "IND" or not uid.isdigit() or not (7 <= len(uid) <= 10):
+        bot.reply_to(message, "⚠️ Invalid input. UID must contain 7 to 10 digits.")
         return
 
     threading.Thread(target=process_like, args=(message, region, uid), daemon=True).start()
@@ -453,13 +452,15 @@ def help_command(message):
 
 @bot.message_handler(
     func=lambda message: (
-        message.chat.type in ("group", "supergroup")
-        and re.fullmatch(r"(?i)(?:IND\\s+)?\\d+", message.text.strip()) is not None
+        (message.chat.type in ("group", "supergroup") or
+         (message.chat.type == "private" and message.from_user and message.from_user.id == OWNER_ID))
+        and isinstance(message.text, str)
+        and re.fullmatch(r"(?i)(?:IND\\s+)?\\d{7,10}", message.text.strip()) is not None
     ),
     content_types=['text']
 )
 def handle_uid_shortcut(message):
-    """Allow 'UID' or 'IND UID' in the official group as an IND /like shortcut."""
+    """Allow a 7-10 digit UID, or 'IND UID', as an IND /like shortcut."""
     if not require_official_group(message):
         return
 
@@ -469,7 +470,7 @@ def handle_uid_shortcut(message):
     else:
         region, uid = parts[0].upper(), parts[1]
 
-    if region != "IND" or not uid.isdigit():
+    if not (region == "IND" and uid.isdigit() and 7 <= len(uid) <= 10):
         return
 
     threading.Thread(
