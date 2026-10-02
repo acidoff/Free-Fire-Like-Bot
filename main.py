@@ -308,7 +308,7 @@ def process_like(message, region, uid):
             f"🌍 <b>REGION ➢</b> <code>{escape(api_region)}</code>\n"
             f"🤡 <b>LIKES BEFORE ➢</b> <code>{escape(likes_before)}</code>\n"
             f"📈 <b>LIKES ADDED ➢</b> <code>{escape(likes_given)}</code>\n"
-            f"🗿 <b>TOTAL LIKES NOW ➢</b> <code>{escape(likes_after)}</code>\"
+            f"🗿 <b>TOTAL LIKES NOW ➢</b> <code>{escape(likes_after)}</code>\n"
             f"▰▱▰▱▰▱▰▱▰▱▰▱▰▱▰\n"
             f"💀 <b>ADMIN ➤</b> {admin_contact_line()}"
         )
