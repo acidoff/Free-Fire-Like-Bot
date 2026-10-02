@@ -137,7 +137,7 @@ def require_official_group(message):
     )
     bot.reply_to(
         message,
-        "❌ Commands are available only in the official group.",
+        "⚠︎ COMMANDS NOT ALLOWED IN THIS BOT PLEASE JOIN THIS GROUP AND USE COMMANDS",
         reply_markup=markup
     )
     return False
@@ -283,7 +283,7 @@ def process_like(message, region, uid):
         )
         return
 
-    processing_msg = bot.reply_to(message, "⏳ Please wait... Sending likes...")
+    processing_msg = bot.reply_to(message, "⚡ LIKES SENDING... PLEASE WAIT...")
     response = call_api(region, uid)
 
     if "error" in response:
@@ -302,7 +302,7 @@ def process_like(message, region, uid):
             bot.edit_message_text(
                 chat_id=processing_msg.chat.id,
                 message_id=processing_msg.message_id,
-                text="❌ UID has already received its max amount of likes. Try another UID or try again after 4:00 AM IST."
+                text="❌ UID HAS ALREADY RECEIVED ITS MAX AMOUNT OF LIKES TRY AGAIN AFTER 4:00 AM"
             )
         except Exception:
             bot.reply_to(message, "⚠️ Invalid UID or unable to fetch data.")
@@ -322,16 +322,13 @@ def process_like(message, region, uid):
 
         # Deliberately do not display any Remaining/Remain information.
         response_text = (
-            f"✅ <b>LIKES SENT SUCCESSFULLY</b>\n"
-            f"▰▱▰▱▰▱▰▱▰▱▰▱▰▱▰\n"
+            f"✅ <b>LIKE SENDED</b>\n\n"
             f"👤 <b>NAME ➢</b> <code>{escape(player_name)}</code>\n"
             f"🆔 <b>UID ➢</b> <code>{escape(player_uid)}</code>\n"
             f"🌍 <b>REGION ➢</b> <code>{escape(api_region)}</code>\n"
-            f"🤡 <b>LIKES BEFORE ➢</b> <code>{escape(likes_before)}</code>\n"
-            f"📈 <b>LIKES ADDED ➢</b> <code>{escape(likes_given)}</code>\n"
-            f"🗿 <b>TOTAL LIKES NOW ➢</b> <code>{escape(likes_after)}</code>\n"
-            f"▰▱▰▱▰▱▰▱▰▱▰▱▰▱▰\n"
-            f"💀 <b>ADMIN ➤</b> {admin_contact_line()}"
+            f"👍 <b>LIKES BEFORE ➢</b> <code>{escape(likes_before)}</code>\n"
+            f"👍 <b>LIKES ADDED ➢</b> <code>{escape(likes_given)}</code>\n"
+            f"👍 <b>TOTAL LIKES ➢</b> <code>{escape(likes_after)}</code>"
         )
 
         bot.edit_message_text(
@@ -415,9 +412,7 @@ def help_command(message):
     help_text = (
         "📖 <b>Bot Commands:</b>\n\n"
         "🧑‍💻 <code>/like &lt;region&gt; &lt;uid&gt;</code> - Send likes to Free Fire UID\n"
-        "🔰 <code>/start</code> - Start the bot\n"
-        "🆘 <code>/help</code> - Show this help menu\n\n"
-        f"📞 <b>Support:</b> {admin_contact_line()}"
+        "🔰 <code>/start</code> - Start the bot"
     )
     bot.reply_to(message, help_text, reply_markup=admin_contact_markup(), parse_mode="HTML")
 
