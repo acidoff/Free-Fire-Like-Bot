@@ -335,14 +335,18 @@ def process_like(message, region, uid):
         return
 
     if not isinstance(response, dict) or response.get("status") != 1:
+        # Do not enforce or report a per-UID "already received max likes"
+        # restriction here. The daily per-user limit remains unchanged above.
+        # If the external API itself refuses the request, report it generically
+        # without adding a UID-specific cooldown/block in the bot.
         try:
             bot.edit_message_text(
                 chat_id=processing_msg.chat.id,
                 message_id=processing_msg.message_id,
-                text="❌ UID HAS ALREADY RECEIVED ITS MAX AMOUNT OF LIKES TRY AGAIN AFTER 4:00 AM"
+                text="⚠️ LIKE REQUEST WAS NOT ACCEPTED BY THE API. PLEASE TRY AGAIN."
             )
         except Exception:
-            bot.reply_to(message, "⚠️ INVALID UID OR UNABLE TO FETCH DATA.")
+            bot.reply_to(message, "⚠️ LIKE REQUEST WAS NOT ACCEPTED BY THE API. PLEASE TRY AGAIN.")
         return
 
     try:
