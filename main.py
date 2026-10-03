@@ -282,8 +282,8 @@ def handle_like(message):
         bot.reply_to(message, "❌ FORMAT: /LIKE IND UID OR /LIKE UID")
         return
 
-    if region != "IND" or not uid.isdigit() or not (7 <= len(uid) <= 10):
-        bot.reply_to(message, "⚠️ INVALID INPUT. UID MUST CONTAIN 7 TO 10 DIGITS.")
+    if region != "IND" or not uid.isdigit():
+        bot.reply_to(message, "⚠️ INVALID INPUT. UID MUST CONTAIN ONLY DIGITS.")
         return
 
     threading.Thread(target=process_like, args=(message, region, uid), daemon=True).start()
@@ -471,12 +471,12 @@ def help_command(message):
         (message.chat.type in ("group", "supergroup") or
          (message.chat.type == "private" and message.from_user and message.from_user.id == OWNER_ID))
         and isinstance(message.text, str)
-        and re.fullmatch(r"(?i)(?:IND\s+)?\d{7,10}", message.text.strip()) is not None
+        and re.fullmatch(r"(?i)(?:IND\s+)?\d+", message.text.strip()) is not None
     ),
     content_types=['text']
 )
 def handle_uid_shortcut(message):
-    """Allow a 7-10 digit UID, or 'IND UID', as an IND /like shortcut."""
+    """Allow a numeric UID of any length, or 'IND UID', as an IND /like shortcut."""
     if not require_official_group(message):
         return
 
@@ -486,7 +486,7 @@ def handle_uid_shortcut(message):
     else:
         region, uid = parts[0].upper(), parts[1]
 
-    if not (region == "IND" and uid.isdigit() and 7 <= len(uid) <= 10):
+    if not (region == "IND" and uid.isdigit()):
         return
 
     threading.Thread(
